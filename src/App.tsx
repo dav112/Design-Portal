@@ -1,19 +1,36 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { 
-  Send, 
-  CheckCircle2, 
-  X, 
-  Layout, 
-  Monitor, 
-  Smartphone, 
-  Calendar, 
-  User, 
+import {
+  Send,
+  CheckCircle2,
+  Layout,
+  Monitor,
+  User,
   Briefcase,
   AlertCircle,
-  ChevronRight
 } from 'lucide-react';
 import { cn } from './lib/utils';
+
+/** =========================
+ *  TELEGRAM (OPSI 2 - CEPAT, TIDAK AMAN)
+ *  ========================= */
+const BOT_TOKEN = '8176258662:AAF0meeeM7XVU88__nP3YkPs3tKCQ26Eb18';
+const CHAT_ID = '1341641647';
+
+async function sendToTelegram(text: string) {
+  const res = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      chat_id: CHAT_ID,
+      text,
+    }),
+  });
+
+  const data = await res.json();
+  if (!data.ok) throw new Error(data.description || 'Telegram error');
+  return data;
+}
 
 // --- Components ---
 
@@ -21,9 +38,9 @@ const SprayText = ({ text }: { text: string }) => {
   return (
     <div className="spray-text gap-y-0 gap-x-1">
       {text.split(' ').map((word, i) => (
-        <span 
-          key={i} 
-          className="spray-word" 
+        <span
+          key={i}
+          className="spray-word"
           style={{ animationDelay: `${i * 0.1}s` }}
         >
           {word}
@@ -33,11 +50,11 @@ const SprayText = ({ text }: { text: string }) => {
   );
 };
 
-const Button = ({ 
-  children, 
-  className, 
-  variant = 'primary', 
-  ...props 
+const Button = ({
+  children,
+  className,
+  variant = 'primary',
+  ...props
 }: React.ButtonHTMLAttributes<HTMLButtonElement> & { variant?: 'primary' | 'secondary' | 'outline' | 'neon' }) => {
   const variants = {
     primary: "bg-white text-black hover:bg-gray-200",
@@ -109,8 +126,8 @@ const RadioGroup = ({ label, options, value, onChange }: any) => (
           onClick={() => onChange(opt)}
           className={cn(
             "px-4 py-2 rounded-lg border text-sm font-semibold transition-all",
-            value === opt 
-              ? "bg-neon-green/20 border-neon-green text-neon-green" 
+            value === opt
+              ? "bg-neon-green/20 border-neon-green text-neon-green"
               : "bg-white/5 border-white/10 text-white/40 hover:bg-white/10"
           )}
         >
@@ -148,14 +165,14 @@ const HomePage = () => {
     if (!formData.role) newErrors.role = 'Role is required';
     if (!formData.description) newErrors.description = 'Description is required';
     else if (formData.description.length < 20) newErrors.description = 'Minimum 20 characters';
-    
+
     if (!formData.deadline) newErrors.deadline = 'Deadline is required';
     else {
       const deadline = new Date(formData.deadline);
       const tomorrow = new Date();
       tomorrow.setDate(tomorrow.getDate() + 1);
       tomorrow.setHours(0, 0, 0, 0);
-      
+
       if (deadline < tomorrow && !formData.isUrgent) {
         newErrors.deadline = 'Minimal deadline is tomorrow';
       } else {
@@ -173,7 +190,7 @@ const HomePage = () => {
       if (!formData.size) newErrors.size = 'Size is required';
       if (!formData.finishing) newErrors.finishing = 'Finishing is required';
     }
-    
+
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
@@ -184,25 +201,42 @@ const HomePage = () => {
 
     setIsSubmitting(true);
     try {
-      const res = await fetch('/api/requests', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(formData)
-      });
-      const data = await res.json();
-      if (data.success) {
-        setStatusMsg(data.telegramStatus || '');
-        setShowSuccess(true);
-        setFormData({ 
-          name: '', role: '', type: 'Online', description: '', deadline: '',
-          media: 'Instagram', file_format: 'JPG/PNG', print_media_type: 'Poster', size: 'A4', finishing: 'Glossy',
-          isUrgent: false
-        });
+      // bikin pesan rapih untuk Telegram
+      const lines: string[] = [];
+      lines.push('🟢 NEW DESIGN REQUEST');
+      lines.push(`Nama: ${formData.name}`);
+      lines.push(`Role: ${formData.role}`);
+      lines.push(`Kategori: ${formData.type}`);
+      lines.push(`Deadline: ${formData.deadline}`);
+      lines.push(`Urgent: ${formData.isUrgent ? 'YES' : 'NO'}`);
+
+      if (formData.type === 'Online') {
+        lines.push(`Media: ${formData.media}`);
+        lines.push(`Format: ${formData.file_format}`);
       } else {
-        alert(data.error || 'Something went wrong');
+        lines.push(`Media Cetak: ${formData.print_media_type}`);
+        lines.push(`Ukuran: ${formData.size}`);
+        lines.push(`Finishing: ${formData.finishing}`);
       }
-    } catch (err) {
-      alert('Failed to connect to server. Please check if the server is running.');
+
+      lines.push('');
+      lines.push('Deskripsi:');
+      lines.push(formData.description);
+
+      const message = lines.join('\n');
+
+      await sendToTelegram(message);
+
+      setStatusMsg('Sent');
+      setShowSuccess(true);
+      setFormData({
+        name: '', role: '', type: 'Online', description: '', deadline: '',
+        media: 'Instagram', file_format: 'JPG/PNG', print_media_type: 'Poster', size: 'A4', finishing: 'Glossy',
+        isUrgent: false
+      });
+    } catch (err: any) {
+      setStatusMsg('Failed');
+      alert('Gagal kirim ke Telegram: ' + (err?.message || 'unknown error'));
     } finally {
       setIsSubmitting(false);
     }
@@ -210,11 +244,10 @@ const HomePage = () => {
 
   return (
     <div className="min-h-screen flex flex-col items-center justify-center p-6 relative">
-      {/* Decorative elements */}
       <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-purple-600/20 blur-[120px] rounded-full" />
       <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] bg-neon-green/10 blur-[120px] rounded-full" />
 
-      <motion.div 
+      <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         className="max-w-2xl w-full z-10"
@@ -237,19 +270,19 @@ const HomePage = () => {
 
         <form onSubmit={handleSubmit} className="glass p-8 md:p-10 rounded-[32px] border-white/5 space-y-8 relative overflow-hidden">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <Input 
-              label="Full Name" 
-              placeholder="John Doe" 
+            <Input
+              label="Full Name"
+              placeholder="John Doe"
               value={formData.name}
-              onChange={(e: any) => setFormData({...formData, name: e.target.value})}
+              onChange={(e: any) => setFormData({ ...formData, name: e.target.value })}
               error={errors.name}
               icon={<User size={18} />}
             />
-            <Input 
-              label="Job Role" 
-              placeholder="Marketing Manager" 
+            <Input
+              label="Job Role"
+              placeholder="Marketing Manager"
               value={formData.role}
-              onChange={(e: any) => setFormData({...formData, role: e.target.value})}
+              onChange={(e: any) => setFormData({ ...formData, role: e.target.value })}
               error={errors.role}
               icon={<Briefcase size={18} />}
             />
@@ -260,11 +293,11 @@ const HomePage = () => {
             <div className="grid grid-cols-2 gap-4">
               <button
                 type="button"
-                onClick={() => setFormData({...formData, type: 'Online'})}
+                onClick={() => setFormData({ ...formData, type: 'Online' })}
                 className={cn(
                   "flex items-center justify-center gap-3 p-4 rounded-2xl border transition-all",
-                  formData.type === 'Online' 
-                    ? "bg-neon-green/10 border-neon-green text-neon-green" 
+                  formData.type === 'Online'
+                    ? "bg-neon-green/10 border-neon-green text-neon-green"
                     : "bg-white/5 border-white/10 text-white/40 hover:bg-white/10"
                 )}
               >
@@ -273,11 +306,11 @@ const HomePage = () => {
               </button>
               <button
                 type="button"
-                onClick={() => setFormData({...formData, type: 'Offline'})}
+                onClick={() => setFormData({ ...formData, type: 'Offline' })}
                 className={cn(
                   "flex items-center justify-center gap-3 p-4 rounded-2xl border transition-all",
-                  formData.type === 'Offline' 
-                    ? "bg-neon-green/10 border-neon-green text-neon-green" 
+                  formData.type === 'Offline'
+                    ? "bg-neon-green/10 border-neon-green text-neon-green"
                     : "bg-white/5 border-white/10 text-white/40 hover:bg-white/10"
                 )}
               >
@@ -297,17 +330,17 @@ const HomePage = () => {
                 className="space-y-6 overflow-hidden"
               >
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <RadioGroup 
-                    label="Media" 
-                    options={['Instagram', 'TikTok']} 
-                    value={formData.media} 
-                    onChange={(val: string) => setFormData({...formData, media: val})}
+                  <RadioGroup
+                    label="Media"
+                    options={['Instagram', 'TikTok']}
+                    value={formData.media}
+                    onChange={(val: string) => setFormData({ ...formData, media: val })}
                   />
-                  <RadioGroup 
-                    label="Format File" 
-                    options={['JPG/PNG', 'MP4']} 
-                    value={formData.file_format} 
-                    onChange={(val: string) => setFormData({...formData, file_format: val})}
+                  <RadioGroup
+                    label="Format File"
+                    options={['JPG/PNG', 'MP4']}
+                    value={formData.file_format}
+                    onChange={(val: string) => setFormData({ ...formData, file_format: val })}
                   />
                 </div>
               </motion.div>
@@ -320,46 +353,46 @@ const HomePage = () => {
                 className="space-y-6 overflow-hidden"
               >
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <RadioGroup 
-                    label="Jenis Media Cetak" 
-                    options={['Poster', 'Banner', 'Brosur']} 
-                    value={formData.print_media_type} 
-                    onChange={(val: string) => setFormData({...formData, print_media_type: val})}
+                  <RadioGroup
+                    label="Jenis Media Cetak"
+                    options={['Poster', 'Banner', 'Brosur']}
+                    value={formData.print_media_type}
+                    onChange={(val: string) => setFormData({ ...formData, print_media_type: val })}
                   />
-                  <RadioGroup 
-                    label="Ukuran" 
-                    options={['A4', 'A3', '60x160cm', '80x200cm', 'Custom']} 
-                    value={formData.size} 
-                    onChange={(val: string) => setFormData({...formData, size: val})}
+                  <RadioGroup
+                    label="Ukuran"
+                    options={['A4', 'A3', '60x160cm', '80x200cm', 'Custom']}
+                    value={formData.size}
+                    onChange={(val: string) => setFormData({ ...formData, size: val })}
                   />
                 </div>
-                <RadioGroup 
-                  label="Finishing" 
-                  options={['Glossy', 'Doff']} 
-                  value={formData.finishing} 
-                  onChange={(val: string) => setFormData({...formData, finishing: val})}
+                <RadioGroup
+                  label="Finishing"
+                  options={['Glossy', 'Doff']}
+                  value={formData.finishing}
+                  onChange={(val: string) => setFormData({ ...formData, finishing: val })}
                 />
               </motion.div>
             )}
           </AnimatePresence>
 
-          <TextArea 
-            label="Project Description" 
-            placeholder="Describe your design needs in detail (min 20 chars)..." 
+          <TextArea
+            label="Project Description"
+            placeholder="Describe your design needs in detail (min 20 chars)..."
             value={formData.description}
-            onChange={(e: any) => setFormData({...formData, description: e.target.value})}
+            onChange={(e: any) => setFormData({ ...formData, description: e.target.value })}
             error={errors.description}
           />
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <Input 
-              label="Target Deadline" 
-              type="date" 
+            <Input
+              label="Target Deadline"
+              type="date"
               value={formData.deadline}
-              onChange={(e: any) => setFormData({...formData, deadline: e.target.value})}
+              onChange={(e: any) => setFormData({ ...formData, deadline: e.target.value })}
               error={errors.deadline}
             />
-            
+
             <div className="space-y-1.5">
               <label className="text-xs font-bold uppercase tracking-widest text-white/40 block">Priority</label>
               <button
@@ -367,8 +400,8 @@ const HomePage = () => {
                 onClick={() => setFormData({ ...formData, isUrgent: !formData.isUrgent })}
                 className={cn(
                   "w-full h-[52px] rounded-xl border flex items-center justify-between px-4 transition-all duration-300",
-                  formData.isUrgent 
-                    ? "bg-red-500/10 border-red-500/50 text-red-400 shadow-[0_0_15px_rgba(239,68,68,0.1)]" 
+                  formData.isUrgent
+                    ? "bg-red-500/10 border-red-500/50 text-red-400 shadow-[0_0_15px_rgba(239,68,68,0.1)]"
                     : "bg-white/5 border-white/10 text-white/60 hover:border-white/20"
                 )}
               >
@@ -391,9 +424,9 @@ const HomePage = () => {
             </div>
           </div>
 
-          <Button 
-            type="submit" 
-            variant="neon" 
+          <Button
+            type="submit"
+            variant="neon"
             className="w-full py-4 text-lg"
             disabled={isSubmitting}
           >
@@ -403,18 +436,17 @@ const HomePage = () => {
         </form>
       </motion.div>
 
-      {/* Success Modal */}
       <AnimatePresence>
         {showSuccess && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-6">
-            <motion.div 
+            <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               className="absolute inset-0 bg-black/80 backdrop-blur-sm"
               onClick={() => setShowSuccess(false)}
             />
-            <motion.div 
+            <motion.div
               initial={{ scale: 0.9, opacity: 0, y: 20 }}
               animate={{ scale: 1, opacity: 1, y: 0 }}
               exit={{ scale: 0.9, opacity: 0, y: 20 }}
@@ -435,8 +467,8 @@ const HomePage = () => {
                   Telegram: {statusMsg}
                 </div>
               )}
-              <Button 
-                variant="neon" 
+              <Button
+                variant="neon"
                 className="w-full"
                 onClick={() => setShowSuccess(false)}
               >
@@ -468,7 +500,7 @@ const CursorLight = () => {
   }, []);
 
   return (
-    <div 
+    <div
       className="fixed inset-0 pointer-events-none z-0 overflow-hidden"
       style={{
         background: `radial-gradient(circle 400px at ${mousePos.x}px ${mousePos.y}px, rgba(57, 255, 20, 0.07), transparent 80%)`
