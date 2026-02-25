@@ -10,7 +10,7 @@ async function startServer() {
   const app = express();
   const PORT = 3000;
 
-  app.use(express.json());
+  app.use(express.json({ limit: '10mb' }));
   app.use(cookieParser());
 
   // --- API Routes ---
@@ -121,6 +121,115 @@ ${description}
     } catch (error) {
       console.error("Error saving request:", error);
       res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // --- Portfolio Endpoints ---
+
+  app.get("/api/portfolio", (req, res) => {
+    try {
+      const items = db.prepare("SELECT * FROM portfolio ORDER BY created_at DESC").all();
+      console.log(`Fetched ${items.length} portfolio items`);
+      res.json(items);
+    } catch (error) {
+      console.error("Portfolio fetch error:", error);
+      res.status(500).json({ error: "Failed to fetch portfolio" });
+    }
+  });
+
+  app.post("/api/admin/login", (req, res) => {
+    const { username, password } = req.body;
+    const admin = db.prepare("SELECT * FROM admins WHERE username = ? AND password = ?").get(username, password);
+    
+    if (admin) {
+      res.cookie("admin_token", "secret_token_123", { 
+        httpOnly: true, 
+        secure: true, 
+        sameSite: 'none',
+        maxAge: 24 * 60 * 60 * 1000,
+        path: '/'
+      });
+      res.json({ success: true });
+    } else {
+      res.status(401).json({ error: "Invalid credentials" });
+    }
+  });
+
+  app.get("/api/admin/check", (req, res) => {
+    if (req.cookies.admin_token === "secret_token_123") {
+      res.json({ isAdmin: true });
+    } else {
+      res.json({ isAdmin: false });
+    }
+  });
+
+  app.post("/api/admin/logout", (req, res) => {
+    res.clearCookie("admin_token");
+    res.json({ success: true });
+  });
+
+  app.post("/api/portfolio", (req, res) => {
+    if (req.cookies.admin_token !== "secret_token_123") {
+      return res.status(403).json({ error: "Unauthorized" });
+    }
+
+    const { title, image_url, category } = req.body;
+    if (!title || !image_url) {
+      return res.status(400).json({ error: "Title and Image URL are required" });
+    }
+
+    try {
+      db.prepare("INSERT INTO portfolio (title, image_url, category) VALUES (?, ?, ?)").run(title.trim(), image_url.trim(), category ? category.trim() : null);
+      res.json({ success: true });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to add portfolio item" });
+    }
+  });
+
+  app.delete("/api/portfolio/:id", (req, res) => {
+    const adminToken = req.cookies.admin_token;
+    const idStr = req.params.id;
+    console.log(`DELETE REQUEST - ID: ${idStr}, Token: ${adminToken}`);
+
+    if (!adminToken || adminToken !== "secret_token_123") {
+      console.log("DELETE DENIED: Unauthorized");
+      return res.status(403).json({ error: "Unauthorized - Please login again" });
+    }
+
+    const id = parseInt(idStr, 10);
+    
+    try {
+      // Try numeric ID first
+      const result = db.prepare("DELETE FROM portfolio WHERE id = ?").run(id);
+      console.log(`Delete result (numeric ID ${id}):`, result);
+      
+      if (result.changes > 0) {
+        return res.json({ success: true });
+      }
+
+      // Try string ID as fallback
+      const resultStr = db.prepare("DELETE FROM portfolio WHERE id = ?").run(idStr);
+      console.log(`Delete result (string ID ${idStr}):`, resultStr);
+
+      if (resultStr.changes > 0) {
+        return res.json({ success: true });
+      }
+
+      console.log(`DELETE FAILED: ID ${idStr} not found`);
+      res.status(404).json({ error: "Item not found in database" });
+    } catch (error) {
+      console.error("DATABASE ERROR during delete:", error);
+      res.status(500).json({ error: "Database error" });
+    }
+  });
+
+  app.get("/api/debug/portfolio", (req, res) => {
+    try {
+      const count = db.prepare("SELECT COUNT(*) as count FROM portfolio").get();
+      const items = db.prepare("SELECT * FROM portfolio").all();
+      res.json({ count, items });
+    } catch (error) {
+      res.status(500).json({ error: error.message });
     }
   });
 
