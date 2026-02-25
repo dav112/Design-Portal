@@ -20,6 +20,35 @@ import {
 } from 'lucide-react';
 import { cn } from './lib/utils';
 
+// ===== DEMO MODE (GitHub Pages) =====
+// Auto aktif kalau dibuka dari *.github.io
+const DEMO_MODE =
+  ((import.meta as any).env?.VITE_DEMO_MODE === 'true') ||
+  window.location.hostname.endsWith('github.io');
+
+const DEMO_USER = ((import.meta as any).env?.VITE_DEMO_USER as string) || 'admin';
+const DEMO_PASS = ((import.meta as any).env?.VITE_DEMO_PASS as string) || 'admin123';
+
+type PortoItem = { id: number; title: string; image_url: string; category?: string };
+
+const DEMO_PORTFOLIO_KEY = 'demo_portfolio_items_v1';
+const DEMO_AUTH_KEY = 'demo_admin_authed_v1';
+
+const getDemoPortfolio = (): PortoItem[] => {
+  try {
+    const raw = localStorage.getItem(DEMO_PORTFOLIO_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+};
+
+const saveDemoPortfolio = (items: PortoItem[]) => {
+  localStorage.setItem(DEMO_PORTFOLIO_KEY, JSON.stringify(items));
+};
+
 // --- Components ---
 
 const PortfolioSection = () => {
@@ -30,6 +59,16 @@ const PortfolioSection = () => {
   
   useEffect(() => {
     setLoading(true);
+
+    // ✅ DEMO: GitHub Pages tanpa backend
+    if (DEMO_MODE) {
+      const data = getDemoPortfolio();
+      setItems(data);
+      setLoading(false);
+      return;
+    }
+
+    // ✅ NORMAL: pakai backend
     fetch('/api/portfolio')
       .then(res => {
         if (!res.ok) throw new Error('Failed to fetch');
@@ -284,7 +323,10 @@ const PortfolioSection = () => {
 };
 
 const AdminPortal = ({ onClose }: { onClose: () => void }) => {
-  const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [isLoggedIn, setIsLoggedIn] = useState(() => {
+    if (!DEMO_MODE) return false;
+    return localStorage.getItem(DEMO_AUTH_KEY) === 'true';
+  });
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
@@ -294,18 +336,35 @@ const AdminPortal = ({ onClose }: { onClose: () => void }) => {
   
   const [newPorto, setNewPorto] = useState({ title: '', image_url: '', category: '' });
 
-  // Removed auto-login check as requested
-  
   useEffect(() => {
     if (isLoggedIn && activeTab === 'manage') {
+      if (DEMO_MODE) {
+        setItems(getDemoPortfolio());
+        return;
+      }
       fetch('/api/portfolio').then(res => res.json()).then(setItems);
     }
   }, [isLoggedIn, activeTab]);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
+    setError('');
     setIsSubmitting(true);
+
     try {
+      // ✅ DEMO LOGIN (tanpa backend)
+      if (DEMO_MODE) {
+        const ok = username === DEMO_USER && password === DEMO_PASS;
+        if (ok) {
+          localStorage.setItem(DEMO_AUTH_KEY, 'true');
+          setIsLoggedIn(true);
+        } else {
+          setError('Invalid credentials');
+        }
+        return;
+      }
+
+      // ✅ NORMAL LOGIN (pakai backend)
       const res = await fetch('/api/admin/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -341,6 +400,25 @@ const AdminPortal = ({ onClose }: { onClose: () => void }) => {
     
     setIsSubmitting(true);
     try {
+      // ✅ DEMO ADD (localStorage)
+      if (DEMO_MODE) {
+        const current = getDemoPortfolio();
+        const newItem: PortoItem = {
+          id: Date.now(),
+          title: newPorto.title,
+          image_url: newPorto.image_url,
+          category: newPorto.category || ''
+        };
+        const next = [newItem, ...current];
+        saveDemoPortfolio(next);
+
+        alert('Portfolio added! (DEMO)');
+        setNewPorto({ title: '', image_url: '', category: '' });
+        window.location.reload();
+        return;
+      }
+
+      // ✅ NORMAL ADD (backend)
       const res = await fetch('/api/portfolio', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -362,10 +440,17 @@ const AdminPortal = ({ onClose }: { onClose: () => void }) => {
   };
 
   const handleDelete = async (id: number) => {
-    console.log(`Frontend: Starting delete process for ID: ${id}`);
-    
+    // ✅ DEMO DELETE (localStorage)
+    if (DEMO_MODE) {
+      const current = getDemoPortfolio();
+      const next = current.filter(item => item.id !== id);
+      saveDemoPortfolio(next);
+      setItems(next);
+      return;
+    }
+
+    // ✅ NORMAL DELETE (backend)
     try {
-      console.log(`Frontend: Sending DELETE request to /api/portfolio/${id}`);
       const res = await fetch(`/api/portfolio/${id}`, { 
         method: 'DELETE',
         headers: { 
@@ -375,21 +460,16 @@ const AdminPortal = ({ onClose }: { onClose: () => void }) => {
         credentials: 'include'
       });
       
-      console.log(`Frontend: Received response status: ${res.status}`);
       const data = await res.json();
-      console.log('Frontend: Response data:', data);
       
       if (res.ok && data.success) {
-        console.log('Frontend: Delete successful, updating state');
         setItems(prev => prev.filter(item => item.id !== id));
-        // Removed window.location.reload() as requested
       } else {
-        console.error('Frontend: Delete failed', data);
         const errorMsg = data.error || 'Unknown error';
-        console.error(`Frontend Error: ${errorMsg}`);
+        console.error(`Delete failed: ${errorMsg}`);
       }
     } catch (err) {
-      console.error('Frontend: Critical error during fetch', err);
+      console.error('Delete error', err);
     }
   };
 
@@ -444,6 +524,12 @@ const AdminPortal = ({ onClose }: { onClose: () => void }) => {
             <Button variant="neon" className="w-full" type="submit" disabled={isSubmitting}>
               {isSubmitting ? 'Verifying...' : 'Unlock Portal'}
             </Button>
+
+            {DEMO_MODE && (
+              <p className="text-center text-[10px] uppercase tracking-widest text-white/30">
+                Demo login: <span className="text-white/60 font-bold">admin / admin123</span>
+              </p>
+            )}
           </form>
         ) : (
           <div className="space-y-6">
@@ -547,10 +633,21 @@ const AdminPortal = ({ onClose }: { onClose: () => void }) => {
             )}
             
             <div className="pt-6 border-t border-white/5">
-              <Button variant="outline" className="w-full text-xs" onClick={async () => {
-                await fetch('/api/admin/logout', { method: 'POST', credentials: 'include' });
-                setIsLoggedIn(false);
-              }}>Logout</Button>
+              <Button
+                variant="outline"
+                className="w-full text-xs"
+                onClick={async () => {
+                  if (DEMO_MODE) {
+                    localStorage.removeItem(DEMO_AUTH_KEY);
+                    setIsLoggedIn(false);
+                    return;
+                  }
+                  await fetch('/api/admin/logout', { method: 'POST', credentials: 'include' });
+                  setIsLoggedIn(false);
+                }}
+              >
+                Logout
+              </Button>
             </div>
           </div>
         )}
